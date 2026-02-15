@@ -222,8 +222,9 @@ Watching channel: #claude → /home/user/project
 - Claude's responses stream in real-time via message edits (~1.5s intervals).
 - When Claude uses `AskUserQuestion`, numbered options appear as an embed — the agent blocks until the user replies.
 - File edits and writes are shown as collapsible diff cards with Show/Hide buttons.
-- Usage is tracked via the Anthropic OAuth API. `!usage` shows current utilization across all rate-limit windows with projected end-of-window usage (⚠️ ≥80%, 🚨 ≥100%).
-- An hourly usage monitor automatically posts reports to the first configured channel when utilization values change, with alerts prepended when projections indicate high usage or likely rate limits.
+- Usage is tracked via the Anthropic OAuth API. `!usage` shows current utilization across all rate-limit windows with projected end-of-window usage (⚠️ ≥80%, 🚨 ≥100%). An hourly usage monitor automatically posts reports to the first configured channel when utilization values change, with alerts prepended when projections indicate high usage or likely rate limits.
+
+<img src="docs/usage-report.png" alt="Usage report showing 5-hour, 7-day, and 7-day Sonnet windows with utilization bars and end-of-window projections" width="400">
 - Sessions auto-expire after the configured timeout (default 60 minutes).
 
 ## License
