@@ -40,6 +40,38 @@ export interface UsageData {
   extra_usage: ExtraUsage | null;
 }
 
+export type AlertLevel = "none" | "warning" | "critical";
+
+export interface WindowProjection {
+  windowName: string;
+  currentUtilization: number;
+  projectedUtilization: number;
+  timeRemainingMs: number;
+  totalWindowMs: number;
+  elapsedMs: number;
+  alertLevel: AlertLevel;
+}
+
+/** Total window durations for each window type. */
+const WINDOW_DURATIONS: Record<string, number> = {
+  five_hour: 5 * 60 * 60 * 1000,
+  seven_day: 7 * 24 * 60 * 60 * 1000,
+  seven_day_opus: 7 * 24 * 60 * 60 * 1000,
+  seven_day_sonnet: 7 * 24 * 60 * 60 * 1000,
+  seven_day_oauth_apps: 7 * 24 * 60 * 60 * 1000,
+  seven_day_cowork: 7 * 24 * 60 * 60 * 1000,
+};
+
+/** Display labels for each window type. */
+const WINDOW_LABELS: Record<string, string> = {
+  five_hour: "5-Hour Window",
+  seven_day: "7-Day Window",
+  seven_day_opus: "7-Day Opus",
+  seven_day_sonnet: "7-Day Sonnet",
+  seven_day_oauth_apps: "7-Day OAuth Apps",
+  seven_day_cowork: "7-Day Cowork",
+};
+
 /** Read OAuth credentials from ~/.claude/.credentials.json */
 function readCredentials(): OAuthCredentials | null {
   if (!existsSync(CREDENTIALS_PATH)) {
@@ -128,6 +160,74 @@ export async function fetchUsage(): Promise<UsageData> {
   return (await res.json()) as UsageData;
 }
 
+/**
+ * Compute end-of-window utilization projections via linear extrapolation.
+ *
+ * For each active window: elapsed = totalDuration - timeRemaining,
+ * then projected = current × (total / elapsed).
+ * Skips projection if elapsed < 1 minute (window just reset).
+ */
+export function computeProjections(data: UsageData): WindowProjection[] {
+  const projections: WindowProjection[] = [];
+  const now = Date.now();
+
+  const windowKeys = [
+    "five_hour",
+    "seven_day",
+    "seven_day_opus",
+    "seven_day_sonnet",
+    "seven_day_oauth_apps",
+    "seven_day_cowork",
+  ] as const;
+
+  for (const key of windowKeys) {
+    const window = data[key];
+    if (!window) continue;
+
+    const totalMs = WINDOW_DURATIONS[key]!;
+    const resetAt = new Date(window.resets_at).getTime();
+    const timeRemainingMs = Math.max(0, resetAt - now);
+    const elapsedMs = totalMs - timeRemainingMs;
+
+    // Skip projection if window just reset (< 1 minute elapsed)
+    const ONE_MINUTE = 60 * 1000;
+    if (elapsedMs < ONE_MINUTE) {
+      projections.push({
+        windowName: key,
+        currentUtilization: window.utilization,
+        projectedUtilization: window.utilization,
+        timeRemainingMs,
+        totalWindowMs: totalMs,
+        elapsedMs,
+        alertLevel: "none",
+      });
+      continue;
+    }
+
+    const projected = window.utilization * (totalMs / elapsedMs);
+    const projectedRounded = Math.round(projected * 10) / 10;
+
+    let alertLevel: AlertLevel = "none";
+    if (projectedRounded >= 100) {
+      alertLevel = "critical";
+    } else if (projectedRounded >= 80) {
+      alertLevel = "warning";
+    }
+
+    projections.push({
+      windowName: key,
+      currentUtilization: window.utilization,
+      projectedUtilization: projectedRounded,
+      timeRemainingMs,
+      totalWindowMs: totalMs,
+      elapsedMs,
+      alertLevel,
+    });
+  }
+
+  return projections;
+}
+
 /** Format a reset timestamp into a human-readable relative time. */
 function formatResetTime(isoString: string): string {
   const resetAt = new Date(isoString);
@@ -136,9 +236,11 @@ function formatResetTime(isoString: string): string {
 
   if (diffMs <= 0) return "now";
 
-  const hours = Math.floor(diffMs / (1000 * 60 * 60));
+  const days = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+  const hours = Math.floor((diffMs % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
   const minutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
 
+  if (days > 0) return `${days}d ${hours}h`;
   if (hours > 0) return `${hours}h ${minutes}m`;
   return `${minutes}m`;
 }
@@ -150,63 +252,65 @@ function usageBar(pct: number, width = 20): string {
   return "█".repeat(filled) + "░".repeat(empty) + ` ${pct}%`;
 }
 
+/** Format a single usage window block with optional projection. */
+function formatWindowBlock(
+  key: string,
+  window: UsageWindow,
+  projections?: WindowProjection[],
+): string[] {
+  const label = WINDOW_LABELS[key] ?? key;
+  const reset = formatResetTime(window.resets_at);
+  const lines: string[] = [];
+
+  lines.push(`**${label}**`);
+  lines.push(`\`${usageBar(window.utilization)}\``);
+  lines.push(`Resets in ${reset}`);
+
+  if (projections) {
+    const proj = projections.find((p) => p.windowName === key);
+    if (proj && proj.elapsedMs >= 60_000) {
+      let projLine = `Projected at reset: ${proj.projectedUtilization}%`;
+      if (proj.alertLevel === "critical") {
+        projLine += ` 🚨 **[RATE LIMIT LIKELY]**`;
+      } else if (proj.alertLevel === "warning") {
+        projLine += ` ⚠️ **[HIGH USAGE]**`;
+      }
+      lines.push(projLine);
+    }
+  }
+
+  lines.push("");
+  return lines;
+}
+
 /** Format usage data into a Discord-friendly embed-style message. */
-export function formatUsageMessage(data: UsageData): string {
+export function formatUsageMessage(data: UsageData, projections?: WindowProjection[]): string {
   const lines: string[] = ["**Claude Usage**", ""];
 
-  if (data.five_hour) {
-    const reset = formatResetTime(data.five_hour.resets_at);
-    lines.push(`**5-Hour Window**`);
-    lines.push(`\`${usageBar(data.five_hour.utilization)}\``);
-    lines.push(`Resets in ${reset}`);
-    lines.push("");
-  }
+  const windowKeys = [
+    "five_hour",
+    "seven_day",
+    "seven_day_sonnet",
+    "seven_day_opus",
+    "seven_day_cowork",
+    "seven_day_oauth_apps",
+  ] as const;
 
-  if (data.seven_day) {
-    const reset = formatResetTime(data.seven_day.resets_at);
-    lines.push(`**7-Day Window**`);
-    lines.push(`\`${usageBar(data.seven_day.utilization)}\``);
-    lines.push(`Resets in ${reset}`);
-    lines.push("");
-  }
-
-  if (data.seven_day_sonnet) {
-    const reset = formatResetTime(data.seven_day_sonnet.resets_at);
-    lines.push(`**7-Day Sonnet**`);
-    lines.push(`\`${usageBar(data.seven_day_sonnet.utilization)}\``);
-    lines.push(`Resets in ${reset}`);
-    lines.push("");
-  }
-
-  if (data.seven_day_opus) {
-    const reset = formatResetTime(data.seven_day_opus.resets_at);
-    lines.push(`**7-Day Opus**`);
-    lines.push(`\`${usageBar(data.seven_day_opus.utilization)}\``);
-    lines.push(`Resets in ${reset}`);
-    lines.push("");
-  }
-
-  if (data.seven_day_cowork) {
-    const reset = formatResetTime(data.seven_day_cowork.resets_at);
-    lines.push(`**7-Day Cowork**`);
-    lines.push(`\`${usageBar(data.seven_day_cowork.utilization)}\``);
-    lines.push(`Resets in ${reset}`);
-    lines.push("");
-  }
-
-  if (data.seven_day_oauth_apps) {
-    const reset = formatResetTime(data.seven_day_oauth_apps.resets_at);
-    lines.push(`**7-Day OAuth Apps**`);
-    lines.push(`\`${usageBar(data.seven_day_oauth_apps.utilization)}\``);
-    lines.push(`Resets in ${reset}`);
-    lines.push("");
+  for (const key of windowKeys) {
+    const window = data[key];
+    if (window) {
+      lines.push(...formatWindowBlock(key, window, projections));
+    }
   }
 
   if (data.extra_usage?.is_enabled) {
     const eu = data.extra_usage;
     lines.push(`**Extra Usage**`);
     if (eu.monthly_limit != null && eu.used_credits != null) {
-      lines.push(`$${eu.used_credits.toFixed(2)} / $${eu.monthly_limit.toFixed(2)}`);
+      // API returns cents — convert to dollars
+      const usedDollars = eu.used_credits / 100;
+      const limitDollars = eu.monthly_limit / 100;
+      lines.push(`$${usedDollars.toFixed(2)} / $${limitDollars.toFixed(2)}`);
       if (eu.utilization != null) {
         lines.push(`\`${usageBar(eu.utilization)}\``);
       }

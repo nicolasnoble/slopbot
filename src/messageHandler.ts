@@ -19,7 +19,7 @@ import { debug } from "./debug.js";
 import { parsePlanApproval } from "./planApprovalParser.js";
 import { downloadDiscordAttachments } from "./attachments.js";
 import { renderQuestionEmbed } from "./questionRenderer.js";
-import { fetchUsage, formatUsageMessage } from "./usageTracker.js";
+import { fetchUsage, formatUsageMessage, computeProjections } from "./usageTracker.js";
 import type { PendingQuestion } from "./types.js";
 
 /**
@@ -168,7 +168,8 @@ async function handleCommand(message: Message, session: SessionInfo | null): Pro
     case "usage": {
       try {
         const data = await fetchUsage();
-        await message.reply(formatUsageMessage(data));
+        const projections = computeProjections(data);
+        await message.reply(formatUsageMessage(data, projections));
       } catch (err) {
         await message.reply(`Failed to fetch usage: ${err instanceof Error ? err.message : String(err)}`);
       }

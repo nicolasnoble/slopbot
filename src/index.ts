@@ -1,10 +1,11 @@
-import { Client, Events, GatewayIntentBits } from "discord.js";
+import { Client, Events, GatewayIntentBits, type TextChannel, ChannelType } from "discord.js";
 import { config } from "./config.js";
 import { debug } from "./debug.js";
 import { handleMessage } from "./messageHandler.js";
 import { startCleanupInterval } from "./sessionManager.js";
 import { handleDiffButtonInteraction } from "./diffInteraction.js";
 import { startDiffCleanup } from "./diffStore.js";
+import { startUsageMonitor } from "./usageMonitor.js";
 
 const client = new Client({
   intents: [
@@ -22,6 +23,22 @@ client.once("ready", (c) => {
   if (config.debug) console.log("Debug mode enabled");
   startCleanupInterval();
   startDiffCleanup();
+
+  // Start periodic usage monitor in the first configured channel
+  const firstChannelName = config.channels.keys().next().value;
+  if (firstChannelName) {
+    const guild = c.guilds.cache.first();
+    if (guild) {
+      const channel = guild.channels.cache.find(
+        (ch) => ch.type === ChannelType.GuildText && ch.name === firstChannelName,
+      ) as TextChannel | undefined;
+      if (channel) {
+        startUsageMonitor(channel);
+      } else {
+        console.warn(`[bot] Could not find text channel #${firstChannelName} for usage monitor`);
+      }
+    }
+  }
 });
 
 client.on("messageCreate", (message) => {
