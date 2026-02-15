@@ -178,17 +178,35 @@ export function splitMessageSimple(text: string): string[] {
 
   const chunks: string[] = [];
   let remaining = text;
+  let openFence: string | null = null; // e.g. "```ts" if we're inside an unclosed fence
 
   while (remaining.length > 0) {
-    if (remaining.length <= MAX_LENGTH) {
-      chunks.push(remaining);
+    // Prepend a fence re-opener if we split mid-code-block in a previous chunk
+    const prefix = openFence ? openFence + "\n" : "";
+    const budget = MAX_LENGTH - prefix.length - 4; // reserve room for a closing ```\n
+
+    if (prefix.length + remaining.length <= MAX_LENGTH) {
+      // Everything fits — just push it
+      chunks.push(prefix + remaining);
       break;
     }
 
-    const slice = remaining.slice(0, MAX_LENGTH);
+    const slice = remaining.slice(0, budget);
     const splitAt = findSplitPoint(slice);
 
-    chunks.push(remaining.slice(0, splitAt));
+    const chunk = remaining.slice(0, splitAt);
+    const fullChunk = prefix + chunk;
+
+    // Determine if we're inside an unclosed code fence at the end of this chunk
+    openFence = findLastOpenFence(fullChunk);
+
+    if (openFence) {
+      // Close the fence so Discord renders the code block properly
+      chunks.push(fullChunk + "\n```");
+    } else {
+      chunks.push(fullChunk);
+    }
+
     remaining = remaining.slice(splitAt);
   }
 
