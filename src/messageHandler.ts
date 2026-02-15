@@ -120,13 +120,19 @@ async function handleCommand(message: Message, session: SessionInfo | null): Pro
       session.abortController.abort();
       if (session.inputChannel) {
         session.inputChannel.close();
-        session.inputChannel = null;
+        // Don't null out inputChannel — the finally block in runAgent will
+        // drain it and handle cleanup.
       }
       if (session.query) {
         session.query.close();
-        session.query = null;
+        // Don't null out query — the finally block handles it.
       }
-      session.busy = false;
+      // Clear the queue so the finally block doesn't process queued messages
+      // after the user explicitly aborted.
+      session.messageQueue = [];
+      session.autoResume = false;
+      // Don't set session.busy = false here — the finally block in runAgent
+      // will set it after cleanup, preventing a race condition.
       session.pendingQuestion = null;
       session.pendingPlanApproval = null;
       session.abortController = new AbortController();

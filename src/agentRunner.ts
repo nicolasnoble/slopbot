@@ -427,6 +427,12 @@ export async function runAgent(
     // Clean up status message
     await clearStatus(state);
 
+    // NOTE: session.busy intentionally remains TRUE throughout this finally
+    // block to prevent a race condition where an incoming Discord message sees
+    // busy=false and calls runAgent() concurrently with the queued-message
+    // dispatch below.  We only set busy=false at the very end if there is
+    // nothing left to process.
+
     // Drain any unconsumed channel items back to the front of the message queue
     inputChannel.close();
     const drained = inputChannel.drain();
@@ -435,8 +441,6 @@ export async function runAgent(
       debug("agent", `Drained ${drained.length} message(s) from inputChannel back to queue`);
     }
     session.inputChannel = null;
-
-    session.busy = false;
     session.query = null;
 
     // If "approve & clear context" was selected, reset and implement on a fresh session
@@ -450,13 +454,12 @@ export async function runAgent(
       session.planToImplement = null;
 
       if (plan) {
-        // Queue the plan as the prompt for a fresh session
-        session.messageQueue = [`Implement the following plan:\n\n${plan}`];
+        // Queue the plan as the prompt for a fresh session, preserving any
+        // user messages that arrived while we were busy
+        session.messageQueue.unshift(`Implement the following plan:\n\n${plan}`);
         debug("agent", `Cleared context and queued plan for fresh implementation in thread ${session.threadId}`);
-      } else {
-        session.messageQueue = [];
-        debug("agent", `Cleared session context for thread ${session.threadId} (next message starts fresh)`);
       }
+      // Note: we no longer wipe the queue — user messages sent while busy are preserved
     }
 
     // Auto-resume: inject a continuation prompt at the front of the queue
@@ -466,13 +469,16 @@ export async function runAgent(
       debug("agent", `Queued auto-resume continuation (total turns so far: ${session.turnCount})`);
     }
 
-    // Process next queued message, if any
+    // Process next queued message, if any — keep busy=true to hand off seamlessly
     const nextPrompt = session.messageQueue.shift();
     if (nextPrompt) {
       debug("agent", `Processing queued message (${session.messageQueue.length} remaining)`);
       runAgent(session, nextPrompt, thread).catch((error) => {
         console.error(`[agent] Queued message error in thread ${session.threadId}:`, error);
       });
+    } else {
+      // Nothing left to process — NOW it's safe to mark idle
+      session.busy = false;
     }
   }
 }
