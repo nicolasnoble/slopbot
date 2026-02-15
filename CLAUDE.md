@@ -18,6 +18,7 @@ pnpm dev               # start with tsx (hot-reload friendly)
 - **AskUserQuestion bridge**: When Claude calls `AskUserQuestion`, the `canUseTool` callback renders a numbered embed and creates a Promise. The user replies with a number, and the Promise resolves, unblocking the agent.
 - **Plan approval bridge**: When Claude calls `ExitPlanMode`, the bot reads the plan file from `~/.claude/plans/` (most recently modified), sends the content to Discord, and waits for user approval. Reply "1"/"approve" to approve, "2"/"reject" to reject, or type feedback.
 - **Permission bypass**: Interactive prompts don't work in Discord, so we use `bypassPermissions` mode by default.
+- **Usage tracking**: `!usage` fetches live utilization metrics from Anthropic's OAuth API (`/api/oauth/usage`). Reads credentials from `~/.claude/.credentials.json` (managed by the Claude Code CLI). Requires the `user:profile` OAuth scope — standard `claude` login provides this, but `claude setup-token` does not. Auto-refreshes expired access tokens via the refresh token.
 - **Debug mode**: Set `DEBUG=true` to enable timestamped verbose logging across all modules (message routing, SDK events, tool calls, session lifecycle, store operations).
 
 ## Project Structure
@@ -36,6 +37,7 @@ src/
 ├── questionRenderer.ts   # AskUserQuestion → Discord embed
 ├── replyParser.ts        # Parse "1", "2,4", freeform answers
 ├── planApprovalParser.ts # Parse plan approval replies (approve/reject/feedback)
+├── usageTracker.ts       # Fetch Claude account usage via OAuth API
 ├── messageSplitter.ts    # Split text >2000 chars
 └── attachments.ts        # Detect image paths, create AttachmentBuilder
 ```

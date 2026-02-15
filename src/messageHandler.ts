@@ -19,6 +19,7 @@ import { debug } from "./debug.js";
 import { parsePlanApproval } from "./planApprovalParser.js";
 import { downloadDiscordAttachments } from "./attachments.js";
 import { renderQuestionEmbed } from "./questionRenderer.js";
+import { fetchUsage, formatUsageMessage } from "./usageTracker.js";
 import type { PendingQuestion } from "./types.js";
 
 /**
@@ -164,6 +165,16 @@ async function handleCommand(message: Message, session: SessionInfo | null): Pro
       return true;
     }
 
+    case "usage": {
+      try {
+        const data = await fetchUsage();
+        await message.reply(formatUsageMessage(data));
+      } catch (err) {
+        await message.reply(`Failed to fetch usage: ${err instanceof Error ? err.message : String(err)}`);
+      }
+      return true;
+    }
+
     case "help": {
       await message.reply(
         [
@@ -172,6 +183,7 @@ async function handleCommand(message: Message, session: SessionInfo | null): Pro
           "`!abort` — Stop the current response",
           "`!model <name>` — Switch Claude model (e.g. `!model claude-sonnet-4-5-20250929`)",
           "`!cost` — Show session and total API costs",
+          "`!usage` — Show Claude account usage limits",
           "`!help` — Show this message",
         ].join("\n")
       );
