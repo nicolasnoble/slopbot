@@ -171,7 +171,8 @@ Watching channel: #claude → /home/user/project
 2. The bot creates a thread and starts streaming Claude's response.
 3. Claude's response streams in via live message edits.
 4. Reply in the thread to continue the conversation — the same Claude session resumes.
-5. If Claude asks a question, a numbered embed appears. Reply with:
+5. Attach files (images, text, etc.) to your message — they are saved to a `Discord/` folder inside the session's working directory so Claude can read and reference them.
+6. If Claude asks a question, a numbered embed appears. Reply with:
    - `1` — select option 1
    - `1,3` — multi-select options 1 and 3
    - Any text — freeform answer
@@ -222,6 +223,7 @@ Watching channel: #claude → /home/user/project
 - Claude's responses stream in real-time via message edits (~1.5s intervals).
 - When Claude uses `AskUserQuestion`, numbered options appear as an embed — the agent blocks until the user replies.
 - File edits and writes are shown as collapsible diff cards with Show/Hide buttons.
+- Discord attachments (images, files) are downloaded into `{cwd}/Discord/` and appended to the prompt so Claude can access them. The path is included in the message context (e.g. `[Attached files saved to: Discord/screenshot.png]`).
 - Usage is tracked via the Anthropic OAuth API. `!usage` shows current utilization across all rate-limit windows with projected end-of-window usage (⚠️ ≥80%, 🚨 ≥100%). An hourly usage monitor automatically posts reports to the first configured channel when utilization values change, with alerts prepended when projections indicate high usage or likely rate limits.
 
 <img src="docs/usage-report.png" alt="Usage report showing 5-hour, 7-day, and 7-day Sonnet windows with utilization bars and end-of-window projections" width="400">
