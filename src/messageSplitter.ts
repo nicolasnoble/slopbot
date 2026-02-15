@@ -2,6 +2,15 @@ import Table from "cli-table3";
 
 const MAX_LENGTH = 1950;
 
+/**
+ * Escape triple backtick sequences inside content that will be wrapped
+ * in a code fence. Replaces ``` with `​`` (backtick + zero-width space + two backticks)
+ * so Discord doesn't interpret them as fence delimiters.
+ */
+export function escapeCodeFences(text: string): string {
+  return text.replace(/```/g, "`\u200B``");
+}
+
 /** Check if a line is a markdown table separator (e.g. |---|---|) */
 function isSeparatorLine(line: string): boolean {
   return /^\|[\s\-:|]+\|$/.test(line.trim());

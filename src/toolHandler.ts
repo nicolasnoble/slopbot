@@ -3,7 +3,7 @@ import { EmbedBuilder } from "discord.js";
 import type { SessionInfo, AskUserQuestionItem, PlanApprovalResult } from "./types.js";
 import { debug } from "./debug.js";
 import { buildFlatOptions, renderQuestionEmbed } from "./questionRenderer.js";
-import { splitMessageSimple } from "./messageSplitter.js";
+import { splitMessageSimple, wrapTablesInCodeBlocks } from "./messageSplitter.js";
 import { readdirSync, readFileSync, statSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
@@ -105,7 +105,7 @@ async function handleExitPlanMode(
 
   if (planContent) {
     // Send the plan content to Discord, split if needed
-    const chunks = splitMessageSimple(planContent);
+    const chunks = splitMessageSimple(wrapTablesInCodeBlocks(planContent));
     for (const chunk of chunks) {
       await session.thread.send(chunk);
     }

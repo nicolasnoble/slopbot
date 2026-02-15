@@ -2,6 +2,7 @@ import type { ButtonInteraction } from "discord.js";
 import { getDiff, formatDiff } from "./diffStore.js";
 import { buildDiffCardEmbed, buildShowDiffButton, buildHideDiffButton } from "./diffCard.js";
 import { debug } from "./debug.js";
+import { escapeCodeFences } from "./messageSplitter.js";
 
 const MAX_DIFF_LENGTH = 20_000;
 const MAX_CHUNK_SIZE = 1950 - "```diff\n\n```".length;
@@ -88,7 +89,7 @@ export async function handleDiffButtonInteraction(
 
   // Replace the original card message with the first diff chunk + hide button
   await interaction.update({
-    content: `\`\`\`diff\n${chunks[0]}\n\`\`\`${truncated && chunks.length === 1 ? truncatedSuffix : ""}`,
+    content: `\`\`\`diff\n${escapeCodeFences(chunks[0]!)}\n\`\`\`${truncated && chunks.length === 1 ? truncatedSuffix : ""}`,
     embeds: [],
     components: [hideDiffRow],
   });
@@ -98,7 +99,7 @@ export async function handleDiffButtonInteraction(
     const suffix =
       truncated && i === chunks.length - 1 ? truncatedSuffix : "";
     await interaction.followUp({
-      content: `\`\`\`diff\n${chunks[i]}\n\`\`\`${suffix}`,
+      content: `\`\`\`diff\n${escapeCodeFences(chunks[i]!)}\n\`\`\`${suffix}`,
     });
   }
 }

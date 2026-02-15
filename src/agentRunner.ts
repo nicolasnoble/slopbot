@@ -6,7 +6,7 @@ import { touchSession, setSessionId, addCost } from "./sessionManager.js";
 import { removePersistedSession } from "./sessionStore.js";
 import { debug } from "./debug.js";
 import { createCanUseTool } from "./toolHandler.js";
-import { splitMessageSimple, wrapTablesInCodeBlocks } from "./messageSplitter.js";
+import { splitMessageSimple, wrapTablesInCodeBlocks, escapeCodeFences } from "./messageSplitter.js";
 import { extractAttachments, attachmentsFromPaths, IMAGE_EXTENSIONS } from "./attachments.js";
 import { storeDiff, getDiff } from "./diffStore.js";
 import { buildDiffCardEmbed, buildShowDiffButton } from "./diffCard.js";
@@ -167,7 +167,7 @@ function buildToolCardEmbed(
   let description = `${icon} **${name}**${detailStr}`;
 
   if (output) {
-    description += `\n\u2504\u2504\u2504\u2504\u2504\u2504\u2504\u2504\n\`\`\`\n${truncateOutput(output)}\n\`\`\``;
+    description += `\n\u2504\u2504\u2504\u2504\u2504\u2504\u2504\u2504\n\`\`\`\n${escapeCodeFences(truncateOutput(output))}\n\`\`\``;
   }
 
   const embed = new EmbedBuilder()
@@ -694,6 +694,9 @@ async function handleMessage(
     }
 
     case "tool_progress": {
+      // DEBUG: Log full tool_progress message to discover undocumented fields
+      debug("agent", `tool_progress RAW: ${JSON.stringify(message)}`);
+
       let card = state.toolCards.get(message.tool_use_id);
 
       // Fallback: create card if it doesn't exist yet (e.g., bypass mode skipped canUseTool)
@@ -775,27 +778,30 @@ async function handleMessage(
               }
             }
 
-            // Update the card with the result, then delete after a delay
-            const cardRef = card;
-            state.toolCards.delete(toolUseId);
-
+            // Update the card with the result — keep it visible until
+            // the next text response triggers clearStatus / deleteAllToolCards
             if (resultText) {
               const embed = buildToolCardEmbed(
-                cardRef.name,
-                cardRef.detail,
+                card.name,
+                card.detail,
                 resultText,
                 undefined,
                 true,
               );
-              cardRef.ready.then((msg) => {
+              card.ready.then((msg) => {
                 msg.edit({ embeds: [embed] }).catch(() => {});
-                // Delete after a short delay so the user can glimpse the result
-                setTimeout(() => { msg.delete().catch(() => {}); }, 2000);
               }).catch(() => {});
             } else {
-              // No output — just delete immediately
-              cardRef.ready.then((msg) => {
-                msg.delete().catch(() => {});
+              // No output — mark as done (green check) but keep visible
+              const embed = buildToolCardEmbed(
+                card.name,
+                card.detail,
+                undefined,
+                undefined,
+                true,
+              );
+              card.ready.then((msg) => {
+                msg.edit({ embeds: [embed] }).catch(() => {});
               }).catch(() => {});
             }
           }
@@ -837,6 +843,13 @@ async function handleMessage(
           await thread.send(`**Session ended with error:** ${errors}`);
         }
       }
+      break;
+    }
+
+    default: {
+      // Log any unhandled message types to discover streaming output we might be missing
+      const raw = message as Record<string, unknown>;
+      debug("agent", `UNHANDLED message type="${raw.type}" subtype="${raw.subtype ?? ""}" keys=[${Object.keys(raw).join(",")}]`);
       break;
     }
   }
