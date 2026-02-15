@@ -44,6 +44,10 @@ src/
 └── attachments.ts        # Detect image paths, create AttachmentBuilder
 ```
 
+## Rules
+
+- **Keep `README.md` accurate.** Any user-facing change (new command, new feature, changed behavior, new env var) must be reflected in `README.md` in the same commit. The README is the primary documentation for end users.
+
 ## Commands
 
 - `pnpm dev` — run with tsx
