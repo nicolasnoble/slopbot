@@ -401,6 +401,15 @@ export async function runAgent(
     const errMsg = error instanceof Error ? error.message : String(error);
     if (errMsg.includes("abort")) {
       console.log(`[agent] Session ${session.threadId} aborted`);
+    } else if (errMsg.toLowerCase().includes("prompt is too long") || errMsg.toLowerCase().includes("prompt_too_long")) {
+      // Context window exceeded — reset session so the next message starts fresh
+      console.error(`[agent] Context overflow in session ${session.threadId}, resetting`);
+      session.sessionId = null;
+      session.turnCount = 0;
+      removePersistedSession(session.threadId);
+      await thread.send(
+        "**Context overflow — conversation too long.** Session has been reset. Your next message will start a fresh conversation."
+      ).catch(() => {});
     } else {
       console.error(`[agent] Error in session ${session.threadId}:`, error);
       await thread.send(`**Error:** ${errMsg}`).catch(() => {});
@@ -836,6 +845,13 @@ async function handleMessage(
           session.sessionId = null;
           removePersistedSession(session.threadId);
           await thread.send("**Session expired.** Your next message will start a fresh conversation.");
+        } else if (errors.toLowerCase().includes("prompt is too long") || errors.toLowerCase().includes("prompt_too_long")) {
+          session.sessionId = null;
+          session.turnCount = 0;
+          removePersistedSession(session.threadId);
+          await thread.send(
+            "**Context overflow — conversation too long.** Session has been reset. Your next message will start a fresh conversation."
+          );
         } else {
           await thread.send(`**Session ended with error:** ${errors}`);
         }
