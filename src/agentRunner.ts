@@ -694,9 +694,6 @@ async function handleMessage(
     }
 
     case "tool_progress": {
-      // DEBUG: Log full tool_progress message to discover undocumented fields
-      debug("agent", `tool_progress RAW: ${JSON.stringify(message)}`);
-
       let card = state.toolCards.get(message.tool_use_id);
 
       // Fallback: create card if it doesn't exist yet (e.g., bypass mode skipped canUseTool)
@@ -846,12 +843,8 @@ async function handleMessage(
       break;
     }
 
-    default: {
-      // Log any unhandled message types to discover streaming output we might be missing
-      const raw = message as Record<string, unknown>;
-      debug("agent", `UNHANDLED message type="${raw.type}" subtype="${raw.subtype ?? ""}" keys=[${Object.keys(raw).join(",")}]`);
+    default:
       break;
-    }
   }
 }
 
