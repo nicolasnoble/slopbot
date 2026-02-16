@@ -889,6 +889,15 @@ function scheduleEdit(state: StreamState, thread: ThreadChannel): void {
   }, delay);
 }
 
+/** Check if a Discord API error indicates the message was deleted (error 10008). */
+function isMessageDeleted(err: unknown): boolean {
+  if (err == null || typeof err !== "object") return false;
+  return (
+    ("code" in err && (err as { code: unknown }).code === 10008) ||
+    ("status" in err && (err as { status: unknown }).status === 404)
+  );
+}
+
 /** Perform the actual message edit with accumulated text. */
 async function doEdit(state: StreamState, thread: ThreadChannel): Promise<void> {
   if (!state.accumulatedText) return;
@@ -907,8 +916,15 @@ async function doEdit(state: StreamState, thread: ThreadChannel): Promise<void> 
   // Edit existing message with first chunk (overflow handled on finalize)
   try {
     await state.currentMessage.edit(chunks[0]!);
-  } catch {
-    // Message may have been deleted
+  } catch (err: unknown) {
+    if (isMessageDeleted(err)) {
+      // Message was deleted — clear the reference so finalizeMessage sends a
+      // fresh message instead of editing a ghost.
+      debug("agent", "doEdit: message was deleted, clearing reference");
+      state.currentMessage = null;
+    }
+    // For transient errors (rate limits etc.), keep the reference — the message
+    // still exists and the next edit or finalizeMessage will retry.
   }
 }
 
@@ -933,10 +949,18 @@ async function finalizeMessage(
     // Edit existing message with the final first chunk
     try {
       await state.currentMessage.edit(chunks[0]);
-    } catch {
-      // If edit fails, send as new message
-      await clearStatus(state);
-      state.currentMessage = await thread.send(chunks[0]);
+    } catch (err: unknown) {
+      // Only send a replacement if the original was actually deleted. For
+      // transient errors (rate limits, network hiccups), the existing message
+      // still has close-to-final content from a previous doEdit — sending a
+      // new one would create a visible duplicate.
+      if (isMessageDeleted(err)) {
+        debug("agent", "finalizeMessage: message was deleted, sending replacement");
+        await clearStatus(state);
+        state.currentMessage = await thread.send(chunks[0]);
+      } else {
+        debug("agent", "finalizeMessage: edit failed (transient), keeping existing message to avoid duplicate");
+      }
     }
   } else if (chunks[0]) {
     // No message sent yet — send the first chunk now
