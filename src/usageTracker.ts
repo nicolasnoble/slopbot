@@ -1,9 +1,9 @@
 import { readFileSync, existsSync } from "node:fs";
-import { homedir } from "node:os";
 import { join } from "node:path";
 import { debug } from "./debug.js";
+import { config } from "./config.js";
 
-const CREDENTIALS_PATH = join(homedir(), ".claude", ".credentials.json");
+const CREDENTIALS_PATH = join(config.claudeConfigDir, ".credentials.json");
 const USAGE_ENDPOINT = "https://api.anthropic.com/api/oauth/usage";
 const TOKEN_ENDPOINT = "https://api.anthropic.com/api/oauth/token";
 
@@ -140,7 +140,7 @@ async function getAccessToken(): Promise<string | null> {
 export async function fetchUsage(): Promise<UsageData> {
   const token = await getAccessToken();
   if (!token) {
-    throw new Error("No OAuth credentials found. Make sure Claude Code is logged in (`~/.claude/.credentials.json` must exist with `user:profile` scope).");
+    throw new Error(`No OAuth credentials found. Make sure Claude Code is logged in (\`${CREDENTIALS_PATH}\` must exist with \`user:profile\` scope).`);
   }
 
   const res = await fetch(USAGE_ENDPOINT, {

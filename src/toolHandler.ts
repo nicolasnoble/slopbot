@@ -6,7 +6,7 @@ import { buildFlatOptions, renderQuestionEmbed } from "./questionRenderer.js";
 import { splitMessageSimple, wrapTablesInCodeBlocks } from "./messageSplitter.js";
 import { readdirSync, readFileSync, statSync, existsSync } from "node:fs";
 import { join } from "node:path";
-import { homedir } from "node:os";
+import { config } from "./config.js";
 
 /**
  * Create a canUseTool callback for a given session.
@@ -110,7 +110,7 @@ async function handleExitPlanMode(
       await session.thread.send(chunk);
     }
   } else {
-    debug("tool", "No plan file found in ~/.claude/plans/");
+    debug("tool", `No plan file found in ${config.claudeConfigDir}/plans/`);
   }
 
   // Send approval prompt
@@ -173,11 +173,11 @@ async function handleExitPlanMode(
 }
 
 /**
- * Find and read the most recently modified plan file from ~/.claude/plans/.
+ * Find and read the most recently modified plan file from the Claude config plans directory.
  * Returns the file content or null if no plan files exist.
  */
 function findLatestPlan(): string | null {
-  const plansDir = join(homedir(), ".claude", "plans");
+  const plansDir = join(config.claudeConfigDir, "plans");
   if (!existsSync(plansDir)) return null;
 
   try {

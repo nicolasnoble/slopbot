@@ -1,12 +1,14 @@
 import "dotenv/config";
 import type { PermissionMode } from "@anthropic-ai/claude-agent-sdk";
 import { existsSync, statSync } from "node:fs";
-import { isAbsolute } from "node:path";
+import { join, isAbsolute } from "node:path";
+import { homedir } from "node:os";
 
 export interface BotConfig {
   discordToken: string;
   anthropicApiKey: string | undefined;
   channels: Map<string, string>; // channel name → CWD path
+  claudeConfigDir: string; // Path to .claude config directory (credentials, plans, etc.)
   claudeModel: string | undefined;
   editRateMs: number;
   permissionMode: PermissionMode;
@@ -64,6 +66,7 @@ export const config: BotConfig = {
   discordToken: requireEnv("DISCORD_TOKEN"),
   anthropicApiKey: process.env["ANTHROPIC_API_KEY"] || undefined,
   channels: parseChannels(),
+  claudeConfigDir: process.env["CLAUDE_CONFIG_DIR"] || join(homedir(), ".claude"),
   claudeModel: process.env["CLAUDE_MODEL"] || undefined,
   editRateMs: parseInt(process.env["EDIT_RATE_MS"] ?? "1500", 10),
   permissionMode: (process.env["PERMISSION_MODE"] as PermissionMode) ?? "bypassPermissions",
