@@ -13,7 +13,7 @@
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "packageManager": "pnpm@10.28.0",
+  "packageManager": "pnpm@10.29.3",
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.2.42",
     "cli-table3": "^0.6.5",
