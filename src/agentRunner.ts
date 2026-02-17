@@ -873,6 +873,7 @@ async function handleMessage(
 /** Schedule a rate-limited edit to the current Discord message. */
 function scheduleEdit(state: StreamState, thread: ThreadChannel): void {
   if (state.editTimer) return; // Already scheduled
+  if (state.pendingEdit) return; // doEdit is already in-flight — wait for it to finish
 
   const elapsed = Date.now() - state.lastEditTime;
   const delay = Math.max(0, config.editRateMs - elapsed);
@@ -884,7 +885,13 @@ function scheduleEdit(state: StreamState, thread: ThreadChannel): void {
     });
     state.pendingEdit = p;
     p.finally(() => {
-      if (state.pendingEdit === p) state.pendingEdit = null;
+      if (state.pendingEdit === p) {
+        state.pendingEdit = null;
+        // If text accumulated while doEdit was in-flight, schedule another edit
+        if (state.accumulatedText) {
+          scheduleEdit(state, thread);
+        }
+      }
     });
   }, delay);
 }
