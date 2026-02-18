@@ -263,19 +263,23 @@ async function clearStatus(state: StreamState): Promise<void> {
 
 // ── Stream input helper ─────────────────────────────────────────────
 
-/** Transform channel strings into SDKUserMessage objects for streamInput. */
+/** Transform channel strings into SDKUserMessage objects for streamInput.
+ *  Tracks the last yielded text so it can be recovered if streamInput fails. */
 async function* toSDKMessages(
   channel: AsyncChannel<string>,
   session: SessionInfo,
+  inflightRef: { text: string | null },
 ): AsyncGenerator<SDKUserMessage> {
   for await (const text of channel) {
     if (!session.sessionId) continue;
+    inflightRef.text = text;
     yield {
       type: "user",
       message: { role: "user", content: text },
       parent_tool_use_id: null,
       session_id: session.sessionId,
     };
+    inflightRef.text = null;
   }
 }
 
@@ -433,15 +437,32 @@ export async function runAgent(
 
     session.query = q;
 
-    // Pipe queued messages from Discord into the SDK between turns
-    q.streamInput(toSDKMessages(inputChannel, session)).catch((err) => {
+    // Pipe queued messages from Discord into the SDK between turns.
+    // Track the in-flight message so we can recover it if the transport dies.
+    const inflight = { text: null as string | null };
+    q.streamInput(toSDKMessages(inputChannel, session, inflight)).catch((err) => {
       debug("agent", `streamInput ended: ${err instanceof Error ? err.message : String(err)}`);
+      // If a message was consumed from the channel but the transport rejected it,
+      // push it back onto the session queue so it's not silently lost.
+      if (inflight.text) {
+        session.messageQueue.unshift(inflight.text);
+        inflight.text = null;
+        debug("agent", `Recovered in-flight message back to queue`);
+      }
     });
 
     for await (const message of q) {
       touchSession(session.threadId);
       await handleMessage(message, session, state, thread);
     }
+
+    // Close the input channel immediately after the query loop ends.
+    // This prevents a race where a Discord message arrives between
+    // the loop finishing and the finally block running — if the
+    // channel were still open, the message would be pushed into it
+    // and streamInput would try to write to the closed transport,
+    // silently losing the message.
+    inputChannel.close();
   } catch (error) {
     const errMsg = error instanceof Error ? error.message : String(error);
     if (errMsg.includes("abort")) {
