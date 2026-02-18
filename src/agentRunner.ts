@@ -590,9 +590,8 @@ async function handleMessage(
         debug("agent", `Context compacted (pre-compaction tokens: ${tokenCount})`);
         console.log(`[agent] Context compacted in thread ${session.threadId} (pre-compaction tokens: ${tokenCount})`);
 
-        // Brief indicator in Discord
-        const notice = await thread.send("*Context compacted — conversation summarized to fit context window*");
-        setTimeout(() => { notice.delete().catch(() => {}); }, 8_000);
+        // Persistent notice in Discord (kept as evidence for debugging self-advancement)
+        await thread.send("*Context compacted — conversation summarized to fit context window*");
       }
       break;
     }
