@@ -401,6 +401,11 @@ export async function runAgent(
         permissionMode: config.permissionMode,
         allowDangerouslySkipPermissions: config.permissionMode === "bypassPermissions",
         abortController: session.abortController,
+        systemPrompt: {
+          type: "preset" as const,
+          preset: "claude_code" as const,
+          append: "IMPORTANT: If context was compacted/summarized and the summary indicates you had asked the user a question or were waiting for user confirmation before taking an action (like committing, deploying, deleting, or any destructive operation), you MUST stop and re-ask the user for confirmation. Do NOT proceed with the action just because a continuation prompt tells you to continue without asking questions — that instruction is about avoiding redundant clarifying questions, not about skipping confirmation for pending actions.",
+        },
         canUseTool: createCanUseTool(session, onToolUse, async () => {
           // Stop the typing indicator when waiting for user input
           if (state.typingInterval) {
@@ -505,7 +510,9 @@ export async function runAgent(
     // Auto-resume: inject a continuation prompt at the front of the queue
     if (session.autoResume) {
       session.autoResume = false;
-      session.messageQueue.unshift("Continue from where you left off.");
+      session.messageQueue.unshift(
+        "Continue from where you left off. If you had just asked the user a question or were waiting for confirmation before a destructive action, you must re-ask rather than proceeding on your own."
+      );
       debug("agent", `Queued auto-resume continuation (total turns so far: ${session.turnCount})`);
     }
 
