@@ -41,7 +41,7 @@ export function createCanUseTool(
 
     // Auto-allow all other tools
     debug("tool", `Auto-allowing: ${toolName}`);
-    return { behavior: "allow" };
+    return { behavior: "allow", updatedInput: input };
   };
 }
 
