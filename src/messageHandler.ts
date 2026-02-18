@@ -149,7 +149,7 @@ async function handleCommand(message: Message, session: SessionInfo | null): Pro
         if (models && models.length > 0) {
           lines.push("", "**Available models:**");
           for (const m of models) {
-            const marker = m.value === config.claudeModel ? " (active)" : "";
+            const marker = m.value === config.claudeModel ? " ✅" : "";
             lines.push(`- \`${m.value}\` — ${m.displayName}${marker}`);
           }
         }
