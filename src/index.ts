@@ -6,6 +6,7 @@ import { startCleanupInterval } from "./sessionManager.js";
 import { handleDiffButtonInteraction } from "./diffInteraction.js";
 import { startDiffCleanup } from "./diffStore.js";
 import { startUsageMonitor } from "./usageMonitor.js";
+import { initModels } from "./agentRunner.js";
 
 const client = new Client({
   intents: [
@@ -23,6 +24,11 @@ client.once("ready", (c) => {
   if (config.debug) console.log("Debug mode enabled");
   startCleanupInterval();
   startDiffCleanup();
+
+  // Eagerly fetch available models so !model works before any conversation
+  initModels().catch((err) => {
+    console.warn(`[bot] initModels failed: ${err}`);
+  });
 
   // Start periodic usage monitor in the first configured channel
   const firstChannelName = config.channels.keys().next().value;

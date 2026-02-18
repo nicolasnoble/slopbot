@@ -31,6 +31,46 @@ export function getCachedModels(): ModelInfo[] | null {
   return cachedModels;
 }
 
+/**
+ * Eagerly fetch available models by starting a short-lived query.
+ * Call once on bot startup so `!model` can list models before any conversation.
+ */
+export async function initModels(): Promise<void> {
+  if (cachedModels) return;
+
+  const firstCwd = config.channels.values().next().value ?? process.cwd();
+  const abortController = new AbortController();
+
+  try {
+    const q = query({
+      prompt: "Say hi",
+      options: {
+        pathToClaudeCodeExecutable: claudeCliPath,
+        model: config.claudeModel,
+        cwd: firstCwd,
+        permissionMode: config.permissionMode,
+        allowDangerouslySkipPermissions: config.permissionMode === "bypassPermissions",
+        abortController,
+        maxTurns: 1,
+        env: {
+          ...process.env,
+          CLAUDECODE: undefined,
+          ...(config.anthropicApiKey ? { ANTHROPIC_API_KEY: config.anthropicApiKey } : {}),
+        },
+      },
+    });
+
+    const models = await q.supportedModels();
+    cachedModels = models;
+    console.log(`[agent] Eagerly cached ${models.length} available models`);
+
+    // Shut down the probe session
+    q.close();
+  } catch (err) {
+    console.warn(`[agent] Failed to eagerly fetch models: ${err instanceof Error ? err.message : String(err)}`);
+  }
+}
+
 // ── Status message helpers ──────────────────────────────────────────
 
 const TOOL_CATEGORIES: Record<string, string> = {
