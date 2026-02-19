@@ -239,7 +239,11 @@ async function handleThreadMessage(message: Message): Promise<void> {
   if (session.pendingPlanApproval) {
     const result = parsePlanApproval(message.content);
     debug("handler", `Parsed plan approval: approved=${result.approved}, clearContext=${result.clearContext ?? false}, feedback=${result.feedback ?? "none"}`);
-    tryDeleteMessage(message);
+    // Only delete simple option selections (1/2/3, approve, reject, etc.)
+    // Keep freeform feedback visible so the conversation history makes sense
+    if (!result.feedback) {
+      tryDeleteMessage(message);
+    }
     session.pendingPlanApproval.resolve(result);
     return;
   }
