@@ -22,6 +22,14 @@ import { renderQuestionEmbed } from "./questionRenderer.js";
 import { fetchUsage, formatUsageMessage, computeProjections } from "./usageTracker.js";
 import type { PendingQuestion } from "./types.js";
 
+/** Build a visual progress bar for context usage. */
+function buildProgressBar(ratio: number): string {
+  const filled = Math.round(ratio * 20);
+  const empty = 20 - filled;
+  const warning = ratio >= 0.8 ? " \u26a0\ufe0f" : "";
+  return `\`[${"=".repeat(filled)}${" ".repeat(empty)}]\`${warning}`;
+}
+
 /**
  * Handle incoming Discord messages.
  * Routes to the appropriate handler based on context.
@@ -173,6 +181,22 @@ async function handleCommand(message: Message, session: SessionInfo | null): Pro
       return true;
     }
 
+    case "context": {
+      if (!session) { await message.reply("Use this command inside a thread."); return true; }
+      if (session.contextWindow === 0) {
+        await message.reply("No context data yet - send a message first.");
+        return true;
+      }
+      const pct = ((session.contextTokens / session.contextWindow) * 100).toFixed(1);
+      const tokensK = (session.contextTokens / 1000).toFixed(1);
+      const windowK = (session.contextWindow / 1000).toFixed(0);
+      const bar = buildProgressBar(session.contextTokens / session.contextWindow);
+      await message.reply(
+        `**Context:** ${tokensK}k / ${windowK}k tokens (${pct}%)\n${bar}`
+      );
+      return true;
+    }
+
     case "usage": {
       try {
         const data = await fetchUsage();
@@ -192,6 +216,7 @@ async function handleCommand(message: Message, session: SessionInfo | null): Pro
           "`!abort` — Stop the current response",
           "`!model <name>` — Switch Claude model (e.g. `!model claude-sonnet-4-5-20250929`)",
           "`!cost` — Show session and total API costs",
+          "`!context` — Show context window usage for this session",
           "`!usage` — Show Claude account usage limits",
           "`!help` — Show this message",
         ].join("\n")

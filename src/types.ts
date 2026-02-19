@@ -57,6 +57,12 @@ export interface SessionInfo {
   turnCount: number;
   /** When true, the agent will auto-resume after hitting maxTurns. */
   autoResume: boolean;
+  /** Last known input token count (from the most recent result message). */
+  contextTokens: number;
+  /** Context window size for the model used in this session. */
+  contextWindow: number;
+  /** Whether the 80% context warning has already been posted. */
+  contextWarned: boolean;
 }
 
 export interface ToolLogEntry {

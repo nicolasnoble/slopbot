@@ -187,6 +187,7 @@ Watching channel: #claude → /home/user/project
 | `!abort` | Stop the current response |
 | `!model <name>` | Switch Claude model (e.g. `!model claude-sonnet-4-5-20250929`) |
 | `!cost` | Show session and total API costs |
+| `!context` | Show context window usage for the current session |
 | `!usage` | Show Claude account usage limits with end-of-window projections |
 
 ## Troubleshooting

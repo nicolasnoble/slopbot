@@ -890,6 +890,35 @@ async function handleMessage(
     }
 
     case "result": {
+      // Update context usage from the result's modelUsage and token counts
+      if ("modelUsage" in message && message.modelUsage) {
+        const models = Object.values(message.modelUsage);
+        if (models.length > 0) {
+          // Use the largest context window across all models used
+          const maxWindow = Math.max(...models.map((m) => m.contextWindow));
+          if (maxWindow > 0) session.contextWindow = maxWindow;
+        }
+      }
+      if ("usage" in message && message.usage) {
+        // input_tokens reflects the current context size (prompt + history)
+        session.contextTokens = message.usage.input_tokens + message.usage.output_tokens;
+      }
+
+      // Post a one-time warning when context usage crosses 80%
+      if (
+        session.contextWindow > 0 &&
+        !session.contextWarned &&
+        session.contextTokens / session.contextWindow >= 0.8
+      ) {
+        session.contextWarned = true;
+        const pct = ((session.contextTokens / session.contextWindow) * 100).toFixed(0);
+        const tokensK = (session.contextTokens / 1000).toFixed(0);
+        const windowK = (session.contextWindow / 1000).toFixed(0);
+        await thread.send(
+          `\u26a0\ufe0f **Context ${pct}% full** (${tokensK}k / ${windowK}k tokens) - conversation will be compacted soon`
+        ).catch(() => {});
+      }
+
       if (message.subtype === "success") {
         addCost(session.threadId, message.total_cost_usd);
         session.turnCount = 0;

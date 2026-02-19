@@ -26,6 +26,9 @@ export function createSession(threadId: string, thread: ThreadChannel, cwd: stri
     planToImplement: null,
     turnCount: 0,
     autoResume: false,
+    contextTokens: 0,
+    contextWindow: 0,
+    contextWarned: false,
   };
   sessions.set(threadId, session);
   return session;
@@ -91,6 +94,9 @@ export function resetSession(threadId: string): boolean {
   session.planToImplement = null;
   session.turnCount = 0;
   session.autoResume = false;
+  session.contextTokens = 0;
+  session.contextWindow = 0;
+  session.contextWarned = false;
   session.messageQueue = [];
   session.lastActivity = Date.now();
   return true;
