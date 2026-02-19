@@ -192,6 +192,7 @@ Watching channel: #claude → /home/user/project
 | `!cost` | Show session and total API costs |
 | `!context` | Show context window usage for the current session |
 | `!usage` | Show Claude account usage limits with end-of-window projections |
+| `!stress` | Run a tool call stress test to diagnose "Stream closed" failures |
 
 ## Troubleshooting
 

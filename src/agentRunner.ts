@@ -1,6 +1,6 @@
 import { query, type SDKMessage, type SDKUserMessage, type ModelInfo } from "@anthropic-ai/claude-agent-sdk";
 import { EmbedBuilder, type Message, type ThreadChannel } from "discord.js";
-import type { SessionInfo, StreamState, ToolCard, PartialToolInput } from "./types.js";
+import type { SessionInfo, StreamState, ToolCard, PartialToolInput, DiagnosticHooks } from "./types.js";
 import { config } from "./config.js";
 import { touchSession, setSessionId, addCost, removeBgTask } from "./sessionManager.js";
 import { removePersistedSession } from "./sessionStore.js";
@@ -309,7 +309,8 @@ async function* toSDKMessages(
 export async function runAgent(
   session: SessionInfo,
   prompt: string,
-  thread: ThreadChannel
+  thread: ThreadChannel,
+  diagnosticHooks?: DiagnosticHooks,
 ): Promise<void> {
   session.busy = true;
   session.currentPromptLabel = prompt.length > 80 ? prompt.slice(0, 77) + "..." : prompt;
@@ -445,6 +446,7 @@ export async function runAgent(
         maxTurns: 50,
         stderr: (data: string) => {
           debug("agent", `CLI stderr: ${data.trim()}`);
+          diagnosticHooks?.onStderr?.(data);
         },
         env: {
           ...process.env,
@@ -472,7 +474,7 @@ export async function runAgent(
 
     for await (const message of q) {
       touchSession(session.threadId);
-      await handleMessage(message, session, state, thread);
+      await handleMessage(message, session, state, thread, diagnosticHooks);
     }
 
     // Close the input channel immediately after the query loop ends.
@@ -616,7 +618,8 @@ async function handleMessage(
   message: SDKMessage,
   session: SessionInfo,
   state: StreamState,
-  thread: ThreadChannel
+  thread: ThreadChannel,
+  diagnosticHooks?: DiagnosticHooks,
 ): Promise<void> {
   debug("agent", `SDK message: type=${message.type}${("subtype" in message) ? `, subtype=${message.subtype}` : ""}`);
 
@@ -851,9 +854,31 @@ async function handleMessage(
           ) {
             const toolUseId = block.tool_use_id as string;
             const card = state.toolCards.get(toolUseId);
-            if (!card) continue;
-
             const isError = "is_error" in block && block.is_error === true;
+
+            // Fire diagnostic hook for every tool result
+            if (diagnosticHooks?.onToolResult) {
+              let content = "";
+              if ("content" in block) {
+                if (typeof block.content === "string") {
+                  content = block.content;
+                } else if (Array.isArray(block.content)) {
+                  content = block.content
+                    .filter((c: any) => c.type === "text")
+                    .map((c: any) => c.text)
+                    .join("\n");
+                }
+              }
+              diagnosticHooks.onToolResult({
+                toolUseId,
+                toolName: card?.name ?? "unknown",
+                isError,
+                content,
+                timestamp: Date.now(),
+              });
+            }
+
+            if (!card) continue;
 
             // Handle diff cards (Edit/Write) — replace with persistent diff card
             if (card.isDiffCard && !isError) {

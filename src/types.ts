@@ -95,6 +95,20 @@ export interface ToolCard {
   isDiffCard?: boolean;
 }
 
+/** Diagnostic hooks for observing tool results (used by stress test). */
+export interface DiagnosticHooks {
+  /** Called for every tool_result block in a "user" message. */
+  onToolResult?: (info: {
+    toolUseId: string;
+    toolName: string;
+    isError: boolean;
+    content: string;
+    timestamp: number;
+  }) => void;
+  /** Called for every stderr line from the CLI subprocess. */
+  onStderr?: (data: string) => void;
+}
+
 /** Tracks a tool_use content block being streamed (input JSON accumulated incrementally). */
 export interface PartialToolInput {
   toolUseId: string;

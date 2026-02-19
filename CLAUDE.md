@@ -41,7 +41,8 @@ src/
 ├── usageTracker.ts       # Fetch Claude account usage via OAuth API + projections
 ├── usageMonitor.ts       # Periodic hourly usage reports with change detection
 ├── messageSplitter.ts    # Split text >2000 chars
-└── attachments.ts        # Detect image paths, create AttachmentBuilder
+├── attachments.ts        # Detect image paths, create AttachmentBuilder
+└── stressTest.ts         # !stress diagnostic: rapid tool call throughput test
 ```
 
 ## Rules

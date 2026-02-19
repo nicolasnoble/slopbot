@@ -25,6 +25,7 @@ import { parsePlanApproval } from "./planApprovalParser.js";
 import { downloadDiscordAttachments } from "./attachments.js";
 import { renderQuestionEmbed } from "./questionRenderer.js";
 import { fetchUsage, formatUsageMessage, computeProjections } from "./usageTracker.js";
+import { runStressTest } from "./stressTest.js";
 import type { PendingQuestion } from "./types.js";
 
 /** Build a visual progress bar for context usage. */
@@ -284,6 +285,19 @@ async function handleCommand(message: Message, session: SessionInfo | null): Pro
       return true;
     }
 
+    case "stress": {
+      if (!session) { await message.reply("Use this command inside a thread."); return true; }
+      if (session.busy) {
+        await message.reply("Session is busy. Abort first or wait for it to finish.");
+        return true;
+      }
+      const thread = message.channel as ThreadChannel;
+      runStressTest(session, thread).catch((err) => {
+        console.error(`[handler] Stress test error in thread ${session.threadId}:`, err);
+      });
+      return true;
+    }
+
     case "help": {
       await message.reply(
         [
@@ -297,6 +311,7 @@ async function handleCommand(message: Message, session: SessionInfo | null): Pro
           "`!cost` — Show session and total API costs",
           "`!context` — Show context window usage for this session",
           "`!usage` — Show Claude account usage limits",
+          "`!stress` — Run tool call stress test (diagnostic)",
           "`!help` — Show this message",
         ].join("\n")
       );
