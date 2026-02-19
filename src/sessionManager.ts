@@ -1,10 +1,16 @@
 import type { ThreadChannel } from "discord.js";
-import type { SessionInfo } from "./types.js";
+import type { SessionInfo, BackgroundTask } from "./types.js";
 import { config } from "./config.js";
 import { debug } from "./debug.js";
 import { persistSessionId, removePersistedSession, persistCost } from "./sessionStore.js";
 
 const sessions = new Map<string, SessionInfo>();
+
+/** Background tasks per thread. */
+const bgTasks = new Map<string, BackgroundTask[]>();
+
+/** Per-thread ID counter for background tasks. */
+const bgIdCounters = new Map<string, number>();
 
 export function createSession(threadId: string, thread: ThreadChannel, cwd: string): SessionInfo {
   debug("session", `Creating session for thread ${threadId} (cwd: ${cwd})`);
@@ -29,6 +35,9 @@ export function createSession(threadId: string, thread: ThreadChannel, cwd: stri
     contextTokens: 0,
     contextWindow: 0,
     contextWarned: false,
+    isBackground: false,
+    bgTaskId: null,
+    currentPromptLabel: null,
   };
   sessions.set(threadId, session);
   return session;
@@ -64,6 +73,7 @@ export function deleteSession(threadId: string): void {
     sessions.delete(threadId);
     removePersistedSession(threadId);
   }
+  abortAllBgTasks(threadId);
 }
 
 /** Reset a session's Claude state while keeping it attached to the same thread. */
@@ -97,8 +107,12 @@ export function resetSession(threadId: string): boolean {
   session.contextTokens = 0;
   session.contextWindow = 0;
   session.contextWarned = false;
+  session.isBackground = false;
+  session.bgTaskId = null;
+  session.currentPromptLabel = null;
   session.messageQueue = [];
   session.lastActivity = Date.now();
+  abortAllBgTasks(threadId);
   return true;
 }
 
@@ -116,6 +130,118 @@ export function touchSession(threadId: string): void {
   if (session) {
     session.lastActivity = Date.now();
   }
+}
+
+// ── Background task management ──────────────────────────────────────
+
+/** Move the current foreground session to background tasks.
+ *  Returns the BackgroundTask, or null if there's no busy session. */
+export function backgroundSession(threadId: string, label: string): BackgroundTask | null {
+  const session = sessions.get(threadId);
+  if (!session || !session.busy) return null;
+
+  const counter = (bgIdCounters.get(threadId) ?? 0) + 1;
+  bgIdCounters.set(threadId, counter);
+
+  session.isBackground = true;
+  session.bgTaskId = counter;
+
+  const task: BackgroundTask = {
+    id: counter,
+    session,
+    label,
+    startedAt: Date.now(),
+  };
+
+  const tasks = bgTasks.get(threadId) ?? [];
+  tasks.push(task);
+  bgTasks.set(threadId, tasks);
+
+  // Detach from the sessions map so a new foreground session can be created
+  sessions.delete(threadId);
+
+  debug("session", `Backgrounded session in thread ${threadId} as bg #${counter}: "${label}"`);
+  return task;
+}
+
+/** Create a new foreground session inheriting sessionId and cost/context data. */
+export function createForegroundSession(
+  threadId: string,
+  thread: ThreadChannel,
+  cwd: string,
+  inheritFrom: SessionInfo,
+): SessionInfo {
+  const session = createSession(threadId, thread, cwd);
+  session.sessionId = inheritFrom.sessionId;
+  session.totalCost = inheritFrom.totalCost;
+  session.contextTokens = inheritFrom.contextTokens;
+  session.contextWindow = inheritFrom.contextWindow;
+  session.contextWarned = inheritFrom.contextWarned;
+  return session;
+}
+
+export function getBgTasks(threadId: string): BackgroundTask[] {
+  return bgTasks.get(threadId) ?? [];
+}
+
+export function removeBgTask(threadId: string, taskId: number): void {
+  const tasks = bgTasks.get(threadId);
+  if (!tasks) return;
+  const idx = tasks.findIndex((t) => t.id === taskId);
+  if (idx !== -1) {
+    tasks.splice(idx, 1);
+    debug("session", `Removed bg task #${taskId} from thread ${threadId} (${tasks.length} remaining)`);
+  }
+  if (tasks.length === 0) {
+    bgTasks.delete(threadId);
+  }
+}
+
+/** Abort a specific background task by ID. Returns true if found. */
+export function abortBgTask(threadId: string, taskId: number): boolean {
+  const tasks = bgTasks.get(threadId);
+  if (!tasks) return false;
+  const task = tasks.find((t) => t.id === taskId);
+  if (!task) return false;
+
+  task.session.abortController.abort();
+  if (task.session.inputChannel) {
+    task.session.inputChannel.close();
+  }
+  if (task.session.query) {
+    task.session.query.close();
+  }
+  task.session.messageQueue = [];
+  task.session.autoResume = false;
+  task.session.pendingQuestion = null;
+  task.session.pendingPlanApproval = null;
+  task.session.abortController = new AbortController();
+  debug("session", `Aborted bg task #${taskId} in thread ${threadId}`);
+  return true;
+}
+
+/** Abort all background tasks for a thread. */
+export function abortAllBgTasks(threadId: string): number {
+  const tasks = bgTasks.get(threadId) ?? [];
+  for (const task of tasks) {
+    task.session.abortController.abort();
+    if (task.session.inputChannel) {
+      task.session.inputChannel.close();
+    }
+    if (task.session.query) {
+      task.session.query.close();
+    }
+    task.session.messageQueue = [];
+    task.session.autoResume = false;
+    task.session.pendingQuestion = null;
+    task.session.pendingPlanApproval = null;
+  }
+  const count = tasks.length;
+  bgTasks.delete(threadId);
+  if (count > 0) {
+    debug("session", `Aborted all ${count} bg task(s) in thread ${threadId}`);
+  }
+  return count;
 }
 
 /** Clean up sessions that have been idle beyond the configured timeout.
@@ -138,6 +264,7 @@ export function cleanupStaleSessions(): void {
         session.query = null;
       }
       sessions.delete(threadId);
+      abortAllBgTasks(threadId);
       // Note: we intentionally do NOT call removePersistedSession() here,
       // so the thread can still be resumed from sessions.json later.
     }

@@ -54,6 +54,19 @@ async function handleAskUserQuestion(
     return { behavior: "allow", updatedInput: input };
   }
 
+  // Background tasks: auto-select first option for each question
+  if (session.isBackground) {
+    const answers: Record<string, string> = {};
+    for (const q of questions) {
+      answers[q.header] = q.options[0]?.label ?? "";
+    }
+    const bgTag = session.bgTaskId != null ? `**[bg #${session.bgTaskId}]** ` : "";
+    const picked = questions.map((q) => `${q.header}: ${q.options[0]?.label ?? "?"}`).join(", ");
+    await session.thread.send(`${bgTag}Auto-selected defaults: ${picked}`).catch(() => {});
+    debug("tool", `AskUserQuestion (background): auto-selected defaults: ${JSON.stringify(answers)}`);
+    return { behavior: "allow", updatedInput: { ...input, answers } };
+  }
+
   debug("tool", `AskUserQuestion: ${questions.length} question(s), headers=[${questions.map(q => q.header).join(", ")}]`);
 
   // Build flat option mapping and initialize interactive state
@@ -99,6 +112,14 @@ async function handleExitPlanMode(
   input: Record<string, unknown>,
 ): Promise<PermissionResult> {
   debug("tool", "ExitPlanMode called — looking for plan file");
+
+  // Background tasks: auto-approve the plan
+  if (session.isBackground) {
+    const bgTag = session.bgTaskId != null ? `**[bg #${session.bgTaskId}]** ` : "";
+    await session.thread.send(`${bgTag}Auto-approved plan.`).catch(() => {});
+    debug("tool", "ExitPlanMode (background): auto-approved");
+    return { behavior: "allow", updatedInput: input };
+  }
 
   // Find and read the most recent plan file
   const planContent = findLatestPlan();

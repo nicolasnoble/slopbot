@@ -2,7 +2,7 @@ import { query, type SDKMessage, type SDKUserMessage, type ModelInfo } from "@an
 import { EmbedBuilder, type Message, type ThreadChannel } from "discord.js";
 import type { SessionInfo, StreamState, ToolCard, PartialToolInput } from "./types.js";
 import { config } from "./config.js";
-import { touchSession, setSessionId, addCost } from "./sessionManager.js";
+import { touchSession, setSessionId, addCost, removeBgTask } from "./sessionManager.js";
 import { removePersistedSession } from "./sessionStore.js";
 import { debug } from "./debug.js";
 import { createCanUseTool } from "./toolHandler.js";
@@ -103,6 +103,15 @@ function formatCountsSummary(toolCounts: Record<string, number>): string {
   return parts.join(" · ");
 }
 
+/** Return a prefix string for background task messages, or empty for foreground. */
+function bgPrefix(session: SessionInfo): string {
+  if (!session.isBackground || session.bgTaskId == null) return "";
+  return `**[bg #${session.bgTaskId}]** `;
+}
+
+/** The gray color used for background task embeds. */
+const BG_EMBED_COLOR = 0x95a5a6;
+
 /** Extract a short, human-readable detail string from a tool's input. */
 function toolDetail(name: string, input: Record<string, unknown>, cwd: string): string {
   switch (name) {
@@ -138,8 +147,9 @@ function shortenPath(p: string, cwd: string): string {
 }
 
 /** Build a Discord embed showing live status. */
-function buildStatusEmbed(state: StreamState): EmbedBuilder {
-  const embed = new EmbedBuilder().setColor(0x5865f2); // Discord blurple
+function buildStatusEmbed(state: StreamState, session?: SessionInfo): EmbedBuilder {
+  const color = session?.isBackground ? BG_EMBED_COLOR : 0x5865f2;
+  const embed = new EmbedBuilder().setColor(color);
 
   if (state.toolLog.length === 0) {
     embed.setDescription("*Thinking...*");
@@ -157,7 +167,7 @@ function buildStatusEmbed(state: StreamState): EmbedBuilder {
   return embed;
 }
 
-async function sendStatus(state: StreamState, thread: ThreadChannel): Promise<void> {
+async function sendStatus(state: StreamState, thread: ThreadChannel, session?: SessionInfo): Promise<void> {
   try {
     // Keep the native "Bot is typing..." indicator active alongside our status
     thread.sendTyping().catch(() => {});
@@ -167,7 +177,7 @@ async function sendStatus(state: StreamState, thread: ThreadChannel): Promise<vo
       }, 8_000);
     }
 
-    const embed = buildStatusEmbed(state);
+    const embed = buildStatusEmbed(state, session);
 
     if (state.statusMessage) {
       await state.statusMessage.edit({ content: "", embeds: [embed] });
@@ -201,6 +211,7 @@ function buildToolCardEmbed(
   output?: string,
   elapsedSec?: number,
   done?: boolean,
+  isBackground?: boolean,
 ): EmbedBuilder {
   const icon = done ? "\u2705" : "\u23F3";
   const detailStr = detail ? `  \`${detail}\`` : "";
@@ -210,8 +221,15 @@ function buildToolCardEmbed(
     description += `\n\u2504\u2504\u2504\u2504\u2504\u2504\u2504\u2504\n\`\`\`\n${escapeCodeFences(truncateOutput(output))}\n\`\`\``;
   }
 
+  let color: number;
+  if (isBackground) {
+    color = BG_EMBED_COLOR;
+  } else {
+    color = done ? 0x57f287 : 0x5865f2; // green when done, blurple while running
+  }
+
   const embed = new EmbedBuilder()
-    .setColor(done ? 0x57f287 : 0x5865f2) // green when done, blurple while running
+    .setColor(color)
     .setDescription(description);
 
   if (elapsedSec != null) {
@@ -294,6 +312,7 @@ export async function runAgent(
   thread: ThreadChannel
 ): Promise<void> {
   session.busy = true;
+  session.currentPromptLabel = prompt.length > 80 ? prompt.slice(0, 77) + "..." : prompt;
   touchSession(session.threadId);
 
   // Create an async channel so queued messages can be injected mid-stream
@@ -318,7 +337,7 @@ export async function runAgent(
 
   try {
     // Send initial status
-    await sendStatus(state, thread);
+    await sendStatus(state, thread, session);
 
     const isResume = session.sessionId !== null;
     debug("agent", `Starting query: ${isResume ? `resume=${session.sessionId}` : "new session"}, model=${config.claudeModel ?? "default"}`);
@@ -332,7 +351,7 @@ export async function runAgent(
       if (existingCard) {
         // Update the existing card with the detail from the full input
         existingCard.detail = detail;
-        const embed = buildToolCardEmbed(toolName, detail);
+        const embed = buildToolCardEmbed(toolName, detail, undefined, undefined, undefined, session.isBackground);
         existingCard.ready.then((msg) => {
           msg.edit({ embeds: [embed] }).catch(() => {});
         }).catch(() => {});
@@ -343,7 +362,7 @@ export async function runAgent(
         state.toolLog.push({ name: toolName, detail });
 
         // Create a new tool card
-        createToolCard(state, thread, toolName, detail, toolUseID);
+        createToolCard(state, thread, toolName, detail, toolUseID, session.isBackground);
       }
 
       // For Edit/Write tools, store diff data and mark as persistent diff card
@@ -391,7 +410,7 @@ export async function runAgent(
       }
 
       // Update the status embed with new tool activity counts
-      sendStatus(state, thread).catch(() => {});
+      sendStatus(state, thread, session).catch(() => {});
     };
 
     const q = query({
@@ -488,7 +507,7 @@ export async function runAgent(
     if (state.pendingEdit) await state.pendingEdit.catch(() => {});
 
     // Finalize any remaining text
-    await finalizeMessage(state, thread);
+    await finalizeMessage(state, thread, session);
 
     // Clean up status message
     await clearStatus(state);
@@ -508,6 +527,16 @@ export async function runAgent(
     }
     session.inputChannel = null;
     session.query = null;
+
+    // Background tasks: post completion notice, clean up, and exit.
+    // Don't process the message queue — that belongs to the foreground session.
+    if (session.isBackground && session.bgTaskId != null) {
+      const prefix = bgPrefix(session);
+      await thread.send(`${prefix}Task completed.`).catch(() => {});
+      removeBgTask(session.threadId, session.bgTaskId);
+      session.busy = false;
+      return;
+    }
 
     // If "approve & clear context" was selected, reset and implement on a fresh session
     if (session.clearContextOnComplete) {
@@ -558,8 +587,9 @@ function createToolCard(
   toolName: string,
   detail: string,
   toolUseId: string,
+  isBackground?: boolean,
 ): void {
-  const embed = buildToolCardEmbed(toolName, detail);
+  const embed = buildToolCardEmbed(toolName, detail, undefined, undefined, undefined, isBackground);
 
   const card: ToolCard = {
     message: null,
@@ -637,15 +667,15 @@ async function handleMessage(
           if (!state.toolCards.has(cb.id)) {
             state.toolCounts[cb.name] = (state.toolCounts[cb.name] ?? 0) + 1;
             state.toolLog.push({ name: cb.name, detail: "" });
-            createToolCard(state, thread, cb.name, "", cb.id);
-            sendStatus(state, thread).catch(() => {});
+            createToolCard(state, thread, cb.name, "", cb.id, session.isBackground);
+            sendStatus(state, thread, session).catch(() => {});
           }
         }
       } else if (event.type === "content_block_delta") {
         const delta = event.delta;
         if (delta && "text" in delta && typeof delta.text === "string") {
           state.accumulatedText += delta.text;
-          scheduleEdit(state, thread);
+          scheduleEdit(state, thread, session);
         }
         // Accumulate tool input JSON
         if (delta && "partial_json" in delta && typeof delta.partial_json === "string") {
@@ -667,7 +697,7 @@ async function handleMessage(
             const card = state.toolCards.get(partial.toolUseId);
             if (card && detail) {
               card.detail = detail;
-              const embed = buildToolCardEmbed(card.name, detail);
+              const embed = buildToolCardEmbed(card.name, detail, undefined, undefined, undefined, session.isBackground);
               card.ready.then((msg) => {
                 msg.edit({ embeds: [embed] }).catch(() => {});
               }).catch(() => {});
@@ -748,7 +778,7 @@ async function handleMessage(
       }
 
       // Finalize the current message (send text to Discord)
-      await finalizeMessage(state, thread);
+      await finalizeMessage(state, thread, session);
 
       // Only send image attachments when the message has text (i.e., it's a response,
       // not just an intermediate tool invocation). Tracked images accumulate across
@@ -783,8 +813,8 @@ async function handleMessage(
         debug("agent", `Creating fallback tool card from tool_progress: ${message.tool_name} (${message.tool_use_id})`);
         state.toolCounts[message.tool_name] = (state.toolCounts[message.tool_name] ?? 0) + 1;
         state.toolLog.push({ name: message.tool_name, detail: "" });
-        createToolCard(state, thread, message.tool_name, "", message.tool_use_id);
-        sendStatus(state, thread).catch(() => {});
+        createToolCard(state, thread, message.tool_name, "", message.tool_use_id, session.isBackground);
+        sendStatus(state, thread, session).catch(() => {});
         card = state.toolCards.get(message.tool_use_id);
       }
 
@@ -795,6 +825,8 @@ async function handleMessage(
           card.detail,
           undefined,
           message.elapsed_time_seconds,
+          undefined,
+          session.isBackground,
         );
         card.ready.then((msg) => {
           msg.edit({ embeds: [embed] }).catch(() => {});
@@ -866,6 +898,7 @@ async function handleMessage(
                 resultText,
                 undefined,
                 true,
+                session.isBackground,
               );
               card.ready.then((msg) => {
                 msg.edit({ embeds: [embed] }).catch(() => {});
@@ -878,6 +911,7 @@ async function handleMessage(
                 undefined,
                 undefined,
                 true,
+                session.isBackground,
               );
               card.ready.then((msg) => {
                 msg.edit({ embeds: [embed] }).catch(() => {});
@@ -967,7 +1001,7 @@ async function handleMessage(
 }
 
 /** Schedule a rate-limited edit to the current Discord message. */
-function scheduleEdit(state: StreamState, thread: ThreadChannel): void {
+function scheduleEdit(state: StreamState, thread: ThreadChannel, session?: SessionInfo): void {
   if (state.editTimer) return; // Already scheduled
   if (state.pendingEdit) return; // doEdit is already in-flight — wait for it to finish
 
@@ -976,7 +1010,7 @@ function scheduleEdit(state: StreamState, thread: ThreadChannel): void {
 
   state.editTimer = setTimeout(() => {
     state.editTimer = null;
-    const p = doEdit(state, thread).catch((err) => {
+    const p = doEdit(state, thread, session).catch((err) => {
       console.error("[agent] doEdit error:", err);
     });
     state.pendingEdit = p;
@@ -985,7 +1019,7 @@ function scheduleEdit(state: StreamState, thread: ThreadChannel): void {
         state.pendingEdit = null;
         // If text accumulated while doEdit was in-flight, schedule another edit
         if (state.accumulatedText) {
-          scheduleEdit(state, thread);
+          scheduleEdit(state, thread, session);
         }
       }
     });
@@ -1002,11 +1036,12 @@ function isMessageDeleted(err: unknown): boolean {
 }
 
 /** Perform the actual message edit with accumulated text. */
-async function doEdit(state: StreamState, thread: ThreadChannel): Promise<void> {
+async function doEdit(state: StreamState, thread: ThreadChannel, session?: SessionInfo): Promise<void> {
   if (!state.accumulatedText) return;
 
   state.lastEditTime = Date.now();
-  const text = wrapTablesInCodeBlocks(state.accumulatedText);
+  const prefix = session ? bgPrefix(session) : "";
+  const text = wrapTablesInCodeBlocks(prefix + state.accumulatedText);
   const chunks = splitMessageSimple(text);
 
   if (!state.currentMessage) {
@@ -1034,7 +1069,8 @@ async function doEdit(state: StreamState, thread: ThreadChannel): Promise<void> 
 /** Finalize: send all accumulated text, properly split. */
 async function finalizeMessage(
   state: StreamState,
-  thread: ThreadChannel
+  thread: ThreadChannel,
+  session?: SessionInfo,
 ): Promise<void> {
   if (state.editTimer) {
     clearTimeout(state.editTimer);
@@ -1046,7 +1082,8 @@ async function finalizeMessage(
     return;
   }
 
-  const chunks = splitMessageSimple(wrapTablesInCodeBlocks(state.accumulatedText));
+  const prefix = session ? bgPrefix(session) : "";
+  const chunks = splitMessageSimple(wrapTablesInCodeBlocks(prefix + state.accumulatedText));
 
   if (state.currentMessage && chunks[0]) {
     // Edit existing message with the final first chunk
@@ -1085,7 +1122,7 @@ async function finalizeMessage(
   // Send a fresh status message for the next turn (if session continues)
   state.toolCounts = {};
   state.toolLog = [];
-  await sendStatus(state, thread);
+  await sendStatus(state, thread, session);
 }
 
 // Stream event types for the Anthropic API (used internally, not exported by SDK)

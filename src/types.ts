@@ -63,6 +63,19 @@ export interface SessionInfo {
   contextWindow: number;
   /** Whether the 80% context warning has already been posted. */
   contextWarned: boolean;
+  /** Whether this session is running as a background task. */
+  isBackground: boolean;
+  /** The background task ID (null if foreground). */
+  bgTaskId: number | null;
+  /** Label describing what this session is working on (used for !jobs). */
+  currentPromptLabel: string | null;
+}
+
+export interface BackgroundTask {
+  id: number;
+  session: SessionInfo;
+  label: string;
+  startedAt: number;
 }
 
 export interface ToolLogEntry {

@@ -12,6 +12,11 @@ import {
   getSession,
   resetSession,
   touchSession,
+  backgroundSession,
+  createForegroundSession,
+  getBgTasks,
+  abortBgTask,
+  abortAllBgTasks,
 } from "./sessionManager.js";
 import { getPersistedSessionId, getPersistedCwd, getPersistedCost, getTotalCost } from "./sessionStore.js";
 import { runAgent, getCachedModels } from "./agentRunner.js";
@@ -114,6 +119,7 @@ async function handleCommand(message: Message, session: SessionInfo | null): Pro
   switch (command) {
     case "clear": {
       if (!session) { await message.reply("Use this command inside a thread."); return true; }
+      // resetSession already calls abortAllBgTasks internally
       resetSession(session.threadId);
       await message.reply("Session cleared. Your next message will start a fresh conversation.");
       return true;
@@ -121,6 +127,25 @@ async function handleCommand(message: Message, session: SessionInfo | null): Pro
 
     case "abort": {
       if (!session) { await message.reply("Use this command inside a thread."); return true; }
+
+      // !abort <n> — abort a specific background task
+      const abortArg = args[0];
+      if (abortArg) {
+        const taskId = parseInt(abortArg, 10);
+        if (isNaN(taskId)) {
+          await message.reply("Usage: `!abort` or `!abort <task-id>`");
+          return true;
+        }
+        const threadId = session.threadId;
+        if (abortBgTask(threadId, taskId)) {
+          await message.reply(`Aborted background task #${taskId}.`);
+        } else {
+          await message.reply(`No background task #${taskId} found.`);
+        }
+        return true;
+      }
+
+      // !abort (no arg) — abort the foreground task
       if (!session.busy) {
         await message.reply("Nothing is running.");
         return true;
@@ -208,12 +233,66 @@ async function handleCommand(message: Message, session: SessionInfo | null): Pro
       return true;
     }
 
+    case "bg": {
+      if (!session) { await message.reply("Use this command inside a thread."); return true; }
+      if (!session.busy) {
+        await message.reply("Nothing is running.");
+        return true;
+      }
+
+      // Close the input channel so no more messages get injected into the background task
+      if (session.inputChannel) {
+        session.inputChannel.close();
+      }
+
+      const label = session.currentPromptLabel ?? "task";
+      const task = backgroundSession(session.threadId, label);
+      if (!task) {
+        await message.reply("Failed to background the current task.");
+        return true;
+      }
+
+      // Create a new foreground session inheriting sessionId + cost/context data
+      const newSession = createForegroundSession(
+        session.threadId,
+        session.thread,
+        session.cwd,
+        session,
+      );
+      // The old runAgent() loop keeps running against its captured SessionInfo reference
+
+      await message.reply(`Moved to background as **[bg #${task.id}]** — \`${label}\`\nYou can send a new message now.`);
+      return true;
+    }
+
+    case "jobs": {
+      if (!session) { await message.reply("Use this command inside a thread."); return true; }
+      const tasks = getBgTasks(session.threadId);
+      if (tasks.length === 0) {
+        await message.reply("No background tasks running.");
+        return true;
+      }
+
+      const lines = tasks.map((t) => {
+        const elapsed = Math.round((Date.now() - t.startedAt) / 1000);
+        const mins = Math.floor(elapsed / 60);
+        const secs = elapsed % 60;
+        const time = mins > 0 ? `${mins}m ${secs}s` : `${secs}s`;
+        return `**#${t.id}** — \`${t.label}\` (${time})`;
+      });
+      await message.reply(`**Background tasks:**\n${lines.join("\n")}`);
+      return true;
+    }
+
     case "help": {
       await message.reply(
         [
           "**Commands:**",
           "`!clear` — Reset session, start fresh in this thread",
           "`!abort` — Stop the current response",
+          "`!abort <n>` — Stop a specific background task",
+          "`!bg` — Move the current task to background",
+          "`!jobs` — List running background tasks",
           "`!model <name>` — Switch Claude model (e.g. `!model claude-sonnet-4-5-20250929`)",
           "`!cost` — Show session and total API costs",
           "`!context` — Show context window usage for this session",

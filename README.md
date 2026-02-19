@@ -185,6 +185,9 @@ Watching channel: #claude → /home/user/project
 | `!help` | Show available commands |
 | `!clear` | Reset session and start fresh in the current thread |
 | `!abort` | Stop the current response |
+| `!abort <n>` | Stop a specific background task by ID |
+| `!bg` | Move the current running task to background |
+| `!jobs` | List running background tasks with IDs and elapsed time |
 | `!model <name>` | Switch Claude model (e.g. `!model claude-sonnet-4-5-20250929`) |
 | `!cost` | Show session and total API costs |
 | `!context` | Show context window usage for the current session |
@@ -226,6 +229,7 @@ Watching channel: #claude → /home/user/project
 - When Claude uses `AskUserQuestion`, numbered options appear as an embed — the agent blocks until the user replies.
 - File edits and writes are shown as collapsible diff cards with Show/Hide buttons.
 - Discord attachments (images, files) are downloaded into `{cwd}/Discord/` and appended to the prompt so Claude can access them. The path is included in the message context (e.g. `[Attached files saved to: Discord/screenshot.png]`).
+- Background tasks: send `!bg` while Claude is working to move the current task to background. You can then start a new conversation in the same thread. Background output is prefixed with `[bg #N]` and uses gray embeds. Background tasks auto-select defaults when Claude asks questions and auto-approve plans. Use `!jobs` to list running tasks and `!abort <n>` to stop one.
 - Usage is tracked via the Anthropic OAuth API. `!usage` shows current utilization across all rate-limit windows with projected end-of-window usage (⚠️ ≥80%, 🚨 ≥100%). An hourly usage monitor automatically posts reports to the first configured channel when utilization values change, with alerts prepended when projections indicate high usage or likely rate limits.
 
 <img src="docs/usage-report.png" alt="Usage report showing 5-hour, 7-day, and 7-day Sonnet windows with utilization bars and end-of-window projections" width="400">
