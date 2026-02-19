@@ -39,6 +39,12 @@ export function createCanUseTool(
     // Notify caller about tool usage (for status display + image tracking)
     onToolUse?.(toolName, input, options.toolUseID);
 
+    // Random delay before auto-accepting to avoid overwhelming the SDK transport
+    if (config.toolAcceptDelayMs > 0) {
+      const delay = Math.floor(Math.random() * config.toolAcceptDelayMs);
+      if (delay > 0) await new Promise((r) => setTimeout(r, delay));
+    }
+
     // Auto-allow all other tools
     debug("tool", `Auto-allowing: ${toolName}`);
     return { behavior: "allow", updatedInput: input };

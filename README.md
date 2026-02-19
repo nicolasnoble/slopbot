@@ -145,6 +145,7 @@ Run `claude login` on the machine before starting the bot. This opens a browser 
 | `PERMISSION_MODE` | No | `bypassPermissions` | Claude Agent SDK permission mode |
 | `SESSION_TIMEOUT_MINUTES` | No | `60` | Idle time before a session is cleaned up |
 | `MAX_TOTAL_TURNS` | No | `200` | Maximum number of agent turns per query |
+| `TOOL_ACCEPT_DELAY_MS` | No | `0` | Max random delay (ms) before auto-accepting tool permissions. Helps prevent "Stream closed" errors during rapid tool usage. Try `200` if you see throttling |
 | `CLAUDE_CONFIG_DIR` | No | `~/.claude` | Path to the Claude config directory (credentials, plans, etc.). Useful for running multiple instances with different Claude accounts |
 | `DEBUG` | No | `false` | Enable verbose debug logging (`true` or `1`) |
 

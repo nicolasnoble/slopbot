@@ -14,6 +14,8 @@ export interface BotConfig {
   permissionMode: PermissionMode;
   sessionTimeoutMinutes: number;
   maxTotalTurns: number;
+  /** Max random delay (ms) added when auto-accepting tool permissions. 0 = no delay. */
+  toolAcceptDelayMs: number;
   debug: boolean;
 }
 
@@ -72,5 +74,6 @@ export const config: BotConfig = {
   permissionMode: (process.env["PERMISSION_MODE"] as PermissionMode) ?? "bypassPermissions",
   sessionTimeoutMinutes: parseInt(process.env["SESSION_TIMEOUT_MINUTES"] ?? "60", 10),
   maxTotalTurns: parseInt(process.env["MAX_TOTAL_TURNS"] ?? "200", 10),
+  toolAcceptDelayMs: parseInt(process.env["TOOL_ACCEPT_DELAY_MS"] ?? "0", 10),
   debug: process.env["DEBUG"] === "true" || process.env["DEBUG"] === "1",
 };

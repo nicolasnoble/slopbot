@@ -1,6 +1,7 @@
 import { EmbedBuilder, type ThreadChannel } from "discord.js";
 import type { SessionInfo, DiagnosticHooks } from "./types.js";
 import { runAgent } from "./agentRunner.js";
+import { removePersistedSession } from "./sessionStore.js";
 import { debug } from "./debug.js";
 
 /** Recorded event from a tool result during the stress test. */
@@ -58,17 +59,15 @@ function buildStressPrompt(cwd: string): string {
   const fileList = filePaths.map((f, i) => `${i + 1}. ${f}`).join("\n");
 
   return [
-    "DIAGNOSTIC STRESS TEST - Read each file below ONE AT A TIME, sequentially.",
-    "For each file, report ONLY its line count in the format: `file.ts: N lines`",
-    "Do NOT use the Task tool or parallelize. Do NOT use Glob or Grep.",
-    "Do NOT skip any files. Read them in order using the Read tool.",
-    "Do NOT batch multiple reads. One Read tool call per file.",
-    "If a file doesn't exist, say so and move on.",
+    "Count the lines in each of the files listed below. Read them one at a time",
+    "using the Read tool (one Read call per file, no parallelization, no Task tool,",
+    "no Glob, no Grep). For each file, report the line count like: `file.ts: N lines`.",
+    "If a file doesn't exist, note that and move on to the next.",
     "",
-    "Files to read:",
+    "Files:",
     fileList,
     "",
-    "After reading all files, say: STRESS TEST COMPLETE",
+    'When done with all files, finish with: "All done."',
   ].join("\n");
 }
 
@@ -108,6 +107,10 @@ export async function runStressTest(
     },
   };
 
+  // Start a fresh Claude session so the stress prompt isn't confused by prior context
+  const savedSessionId = session.sessionId;
+  session.sessionId = null;
+
   const prompt = buildStressPrompt(session.cwd);
 
   try {
@@ -115,6 +118,14 @@ export async function runStressTest(
   } catch (err) {
     await thread.send(`**Stress test error:** ${err instanceof Error ? err.message : String(err)}`);
   }
+
+  // Restore the original session ID so the thread can continue normally.
+  // If the stress test created a new session ID, discard it (we don't persist
+  // the throwaway session).
+  if (session.sessionId !== savedSessionId) {
+    removePersistedSession(session.threadId);
+  }
+  session.sessionId = savedSessionId;
 
   const endTime = Date.now();
   const results: StressResults = {
