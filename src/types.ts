@@ -69,6 +69,8 @@ export interface SessionInfo {
   bgTaskId: number | null;
   /** Label describing what this session is working on (used for !jobs). */
   currentPromptLabel: string | null;
+  /** Actual permission mode reported by the SDK (may differ from requested). */
+  actualPermissionMode: string | null;
 }
 
 export interface BackgroundTask {

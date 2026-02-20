@@ -38,6 +38,7 @@ export function createSession(threadId: string, thread: ThreadChannel, cwd: stri
     isBackground: false,
     bgTaskId: null,
     currentPromptLabel: null,
+    actualPermissionMode: null,
   };
   sessions.set(threadId, session);
   return session;
