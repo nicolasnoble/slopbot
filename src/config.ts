@@ -1,6 +1,6 @@
 import "dotenv/config";
-import type { PermissionMode } from "@anthropic-ai/claude-agent-sdk";
-import { existsSync, statSync } from "node:fs";
+import type { McpServerConfig, PermissionMode } from "@anthropic-ai/claude-agent-sdk";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { join, isAbsolute } from "node:path";
 import { homedir } from "node:os";
 
@@ -16,6 +16,7 @@ export interface BotConfig {
   maxTotalTurns: number;
   /** Max random delay (ms) added when auto-accepting tool permissions. 0 = no delay. */
   toolAcceptDelayMs: number;
+  mcpServers: Record<string, McpServerConfig> | undefined;
   debug: boolean;
 }
 
@@ -64,6 +65,17 @@ function parseChannels(): Map<string, string> {
   return new Map([[watchChannel, claudeCwd]]);
 }
 
+function loadMcpServers(): Record<string, McpServerConfig> | undefined {
+  const path = process.env["MCP_CONFIG"] || join(process.cwd(), "mcp.json");
+  if (!existsSync(path)) return undefined;
+  try {
+    return JSON.parse(readFileSync(path, "utf-8"));
+  } catch (err) {
+    console.error(`Failed to parse MCP config from ${path}:`, err);
+    return undefined;
+  }
+}
+
 export const config: BotConfig = {
   discordToken: requireEnv("DISCORD_TOKEN"),
   anthropicApiKey: process.env["ANTHROPIC_API_KEY"] || undefined,
@@ -75,5 +87,6 @@ export const config: BotConfig = {
   sessionTimeoutMinutes: parseInt(process.env["SESSION_TIMEOUT_MINUTES"] ?? "60", 10),
   maxTotalTurns: parseInt(process.env["MAX_TOTAL_TURNS"] ?? "200", 10),
   toolAcceptDelayMs: parseInt(process.env["TOOL_ACCEPT_DELAY_MS"] ?? "0", 10),
+  mcpServers: loadMcpServers(),
   debug: process.env["DEBUG"] === "true" || process.env["DEBUG"] === "1",
 };

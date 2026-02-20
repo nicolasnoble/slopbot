@@ -442,6 +442,7 @@ export async function runAgent(
         model: config.claudeModel,
         cwd: session.cwd,
         settingSources: ["user", "project", "local"],
+        mcpServers: config.mcpServers,
         permissionMode: config.permissionMode,
         allowDangerouslySkipPermissions: config.permissionMode === "bypassPermissions",
         abortController: session.abortController,

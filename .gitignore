@@ -3,3 +3,7 @@ dist/
 .env
 *.log
 sessions.json
+mcp.json
+seed-slack.mjs
+test-results/
+.playwright-mcp/

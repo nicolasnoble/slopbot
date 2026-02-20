@@ -147,7 +147,31 @@ Run `claude login` on the machine before starting the bot. This opens a browser 
 | `MAX_TOTAL_TURNS` | No | `200` | Maximum number of agent turns per query |
 | `TOOL_ACCEPT_DELAY_MS` | No | `0` | Max random delay (ms) before auto-accepting tool permissions. Helps prevent "Stream closed" errors during rapid tool usage. Try `200` if you see throttling |
 | `CLAUDE_CONFIG_DIR` | No | `~/.claude` | Path to the Claude config directory (credentials, plans, etc.). Useful for running multiple instances with different Claude accounts |
+| `MCP_CONFIG` | No | `./mcp.json` | Path to a JSON file defining MCP servers to connect (see below) |
 | `DEBUG` | No | `false` | Enable verbose debug logging (`true` or `1`) |
+
+#### MCP servers
+
+To give Claude access to external tools via [MCP](https://modelcontextprotocol.io/), create a `mcp.json` file in the bot's working directory (or point `MCP_CONFIG` at a different path). The file maps server names to their configurations:
+
+```json
+{
+  "my-server": {
+    "command": "npx",
+    "args": ["-y", "@modelcontextprotocol/server-everything"]
+  }
+}
+```
+
+Supported server types:
+
+| Type | Required fields |
+|---|---|
+| stdio (default) | `command`, optionally `args` and `env` |
+| sse | `type: "sse"`, `url`, optionally `headers` |
+| http | `type: "http"`, `url`, optionally `headers` |
+
+The `mcp.json` file is gitignored by default since it may contain credentials.
 
 ### 5. Run the Bot
 
