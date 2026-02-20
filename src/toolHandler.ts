@@ -24,7 +24,7 @@ export function createCanUseTool(
     input: Record<string, unknown>,
     options
   ): Promise<PermissionResult> => {
-    debug("tool", `canUseTool called: ${toolName} (toolUseID=${options.toolUseID})`);
+    debug("tool", `canUseTool called: ${toolName} (toolUseID=${options.toolUseID}, agentID=${options.agentID ?? "main"})`);
 
     if (toolName === "AskUserQuestion") {
       await pauseTyping?.();
@@ -46,7 +46,7 @@ export function createCanUseTool(
     }
 
     // Auto-allow all other tools
-    debug("tool", `Auto-allowing: ${toolName}`);
+    debug("tool", `Auto-allowing: ${toolName} (agentID=${options.agentID ?? "main"})`);
     return { behavior: "allow", updatedInput: input };
   };
 }
