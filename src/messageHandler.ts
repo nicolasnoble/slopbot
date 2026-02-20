@@ -332,6 +332,14 @@ async function handleThreadMessage(message: Message): Promise<void> {
   if (!session) {
     const persistedId = getPersistedSessionId(threadId);
     if (!persistedId) {
+      // Check if the thread's parent channel is one we're configured to watch.
+      // If not, this thread belongs to another bot instance - silently ignore.
+      const thread = message.channel as ThreadChannel;
+      const parentName = thread.parent?.name;
+      if (!parentName || !config.channels.has(parentName)) {
+        debug("handler", `Thread ${threadId} belongs to unwatched channel "${parentName ?? "unknown"}", ignoring`);
+        return;
+      }
       await message.reply("Session not found — it may have been lost in a crash. Please start a new conversation in the channel.");
       return;
     }
