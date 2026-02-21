@@ -451,15 +451,14 @@ export async function runAgent(
           preset: "claude_code" as const,
           append: SYSTEM_PROMPT_APPEND,
         },
-        // Pre-approve all tools at the session level. This works correctly in
-        // bypassPermissions mode. In default mode, background subagents still
-        // don't inherit these (SDK bug: anthropics/claude-code#27203), but
-        // keeping it here for when the bug is fixed and for foreground subagents.
+        // Pre-approve all standard tools so they don't trigger canUseTool.
+        // AskUserQuestion and ExitPlanMode are intentionally EXCLUDED so the
+        // CLI routes them through canUseTool, where we bridge them to Discord
+        // (render embeds, wait for user reply, return answers).
         allowedTools: [
           "Bash", "Read", "Write", "Edit", "Grep", "Glob",
           "WebFetch", "WebSearch", "Task", "TodoWrite",
-          "NotebookEdit", "EnterPlanMode", "ExitPlanMode",
-          "AskUserQuestion", "Skill",
+          "NotebookEdit", "EnterPlanMode", "Skill",
         ],
         canUseTool: createCanUseTool(session, onToolUse, async () => {
           // Stop the typing indicator when waiting for user input
